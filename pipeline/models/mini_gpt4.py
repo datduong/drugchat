@@ -118,6 +118,7 @@ class MiniGPT4(BaseModel):
                 raw_prompts = f.read().splitlines()
             filted_prompts = [raw_prompt for raw_prompt in raw_prompts if "<compoundHere>" in raw_prompt]
             self.prompt_list = [prompt_template.format(p) for p in filted_prompts]
+            # self.prompt_list = ["###Human: <compound><compoundHere></compound>###Human: Can you describe the mechanism of this drug?###Assistant:"]
             print('Load {} training prompts'.format(len(self.prompt_list)))
             print('Prompt Example \n{}'.format(random.choice(self.prompt_list)))
         else:
@@ -178,7 +179,7 @@ class MiniGPT4(BaseModel):
         img_embeds, atts_img = self.encode_img(graph)
         if 'question' in samples:
             assert len(samples['question']) == 1, "not supporting batch mode yet"
-            vqa_prompt = '###Human: <compound><compoundHere></compound> ' + samples['question'][0]
+            vqa_prompt = '###Human: <compound><compoundHere></compound> ' + samples['question'][0] + "###Assistant: "
             img_embeds, atts_img = self.prompt_wrap(img_embeds, atts_img, vqa_prompt)
         elif self.prompt_list:
             prompt = random.choice(self.prompt_list)
