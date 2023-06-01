@@ -1,0 +1,41 @@
+model:
+  arch: gnn_pretrain
+  model_type: gnn0
+  vocab_size: 27633
+  use_graph_agg: True
+  gnn_ckpt: ckpt/gcn_contextpred.pth
+
+
+datasets:
+  gnn_pretrain:
+    name: gnn_
+
+run:
+  task: gnn_pretrain
+  # optimizer
+  lr_sched: "linear_warmup_cosine_lr"
+  init_lr: 5e-3
+  min_lr: 1e-5
+  warmup_lr: 1e-5
+
+  weight_decay: 0.05
+  max_epoch: 50
+  iters_per_epoch: 184  # 47105 / batch_size
+  batch_size_train: 256
+  batch_size_eval: 256
+  num_workers: 2
+  warmup_steps: 400
+
+  seed: 42
+  output_dir: "output/pipeline_gnn_pretrain"
+
+  amp: False
+  resume_ckpt_path: null
+
+  evaluate: False 
+  train_splits: ["train"]
+
+  device: "cuda"
+  world_size: 1
+  dist_url: "env://"
+  distributed: True

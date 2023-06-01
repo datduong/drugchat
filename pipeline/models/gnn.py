@@ -321,10 +321,14 @@ class GNN(torch.nn.Module):
             state_dict = checkpoint["model"]
         else:
             state_dict = checkpoint
+        sd = {}
+        for k, v in state_dict.items():
+            k_ = k.replace("gnn.", "")
+            sd[k_] = v
 
-        msg = self.load_state_dict(state_dict, strict=False)
+        msg = self.load_state_dict(sd, strict=False)
 
-        logging.info("Loading info: {}".format(msg.missing_keys))
+        logging.info("Loading info: {}".format(msg))
         logging.info("load checkpoint from %s" % url_or_filename)
 
         return msg

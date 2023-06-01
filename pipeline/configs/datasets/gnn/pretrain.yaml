@@ -1,0 +1,5 @@
+datasets:
+  gnn_pretrain:
+    data_type: graph
+    build_info:
+      storage: data/chebi_graph.pkl
