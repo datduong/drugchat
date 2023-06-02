@@ -15,6 +15,8 @@ import contextlib
 from pipeline.models.base_model import BaseModel
 from transformers import StoppingCriteria, StoppingCriteriaList
 
+from pipeline.models.image_mol import ImageMol
+
 
 class StoppingCriteriaSub(StoppingCriteria):
 
@@ -43,7 +45,7 @@ class MiniGPT4(BaseModel):
     def __init__(
         self,
         vit_model="eva_clip_g",
-        q_former_model="ckpt/gcn_contextpred.pth",
+        encoder_ckpt=None,
         img_size=224,
         drop_path_rate=0,
         use_grad_checkpoint=False,
@@ -59,31 +61,20 @@ class MiniGPT4(BaseModel):
         low_resource=False,  # use 8 bit and put vit in cpu
         device_8bit=0,  # the device of 8bit model should be set when loading and cannot be changed anymore.
         use_graph_agg=True,
+        encoder_name="gnn",
     ):
         super().__init__()
 
         # self.tokenizer = self.init_tokenizer()
         self.low_resource = low_resource
+        self.encoder_name = encoder_name
 
-        print('Loading GNN')
-        print(f"{use_graph_agg=}")
-        self.use_graph_agg = use_graph_agg
-        self.gnn = GNN(num_layer=5, emb_dim=300, gnn_type='gcn', use_graph_agg=self.use_graph_agg)
-        self.gnn.load_from_pretrained(url_or_filename=q_former_model)
+        if self.encoder_name == "gnn":
+            self.use_graph_agg = use_graph_agg
+            self.create_gnn(encoder_ckpt, freeze_qformer)
+        elif self.encoder_name.startswith("image_mol"):
+            self.create_image_mol(encoder_ckpt, freeze_qformer)
 
-        if freeze_qformer:
-            for name, param in self.gnn.named_parameters():
-                param.requires_grad = False
-            self.gnn = self.gnn.eval()
-            self.gnn.train = disabled_train
-            logging.info("freezed GNN")
-        
-        pt = None
-        if not self.use_graph_agg:
-            pt = nn.Parameter(torch.zeros(1, self.gnn.out_dim))
-        self.register_parameter("pad_token", pt)
-        
-        print('Loaded GNN')
         self.ln_vision = nn.Identity()
 
         print('Loading LLAMA')
@@ -108,7 +99,7 @@ class MiniGPT4(BaseModel):
         print('Loading LLAMA Done')
 
         self.llama_proj = nn.Linear(
-            self.gnn.out_dim, self.llama_model.config.hidden_size
+            self.encoder_out_dim, self.llama_model.config.hidden_size
         )
         self.max_txt_len = max_txt_len
         self.end_sym = end_sym
@@ -124,24 +115,72 @@ class MiniGPT4(BaseModel):
         else:
             self.prompt_list = []
 
+    def create_gnn(self, model_path, freeze):
+        print('Loading GNN')
+        print(f"use_graph_agg={self.use_graph_agg}")
+        self.gnn = GNN(num_layer=5, emb_dim=300, gnn_type='gcn', use_graph_agg=self.use_graph_agg)
+        self.gnn.load_from_pretrained(url_or_filename=model_path)
+        self.encoder_out_dim = self.gnn.out_dim
+
+        if freeze:
+            for name, param in self.gnn.named_parameters():
+                param.requires_grad = False
+            self.gnn = self.gnn.eval()
+            self.gnn.train = disabled_train
+            logging.info("freezed GNN")
+        
+        pt = None
+        if not self.use_graph_agg:
+            pt = nn.Parameter(torch.zeros(1, self.gnn.out_dim))
+        self.register_parameter("pad_token", pt)
+        
+        print('Loaded GNN')
+
+    def create_image_mol(self, model_path, freeze):
+        model_name = self.encoder_name.replace("image_mol_", "")
+        model = ImageMol()
+        model.load_from_pretrained(url_or_filename=model_path)
+        self.image_mol = model
+        self.encoder_out_dim = model.emb_dim
+
+        if freeze:
+            for name, param in self.image_mol.named_parameters():
+                param.requires_grad = False
+            self.image_mol = self.image_mol.eval()
+            self.image_mol.train = disabled_train
+            logging.info("freezed image_mol")
+        print('Loaded image_mol')
+
     def vit_to_cpu(self):
         self.ln_vision.to("cpu")
         self.ln_vision.float()
-        self.gnn.to("cpu")
-        self.gnn.float()
+        if self.encoder_name == "gnn":
+            self.gnn.to("cpu")
+            self.gnn.float()
+        elif self.encoder_name.startswith("image_mol"):
+            self.image_mol.to("cpu")
+            self.image_mol.float()
 
-    def encode_img(self, graph):
-        device = graph.x.device
-        if self.low_resource:
-            self.vit_to_cpu()
-            graph = graph.to("cpu")
+    def encode_img(self, inputs):
+        if self.encoder_name == "gnn":
+            graph = inputs
+            device = graph.x.device
+            if self.low_resource:
+                self.vit_to_cpu()
+                graph = graph.to("cpu")
 
-        graph_feat = self.gnn(graph)
-        if not self.use_graph_agg:
-            graph_feat = self.pad_node(graph, graph_feat)
-        graph_embeds = self.ln_vision(graph_feat).to(device)
+            graph_feat = self.gnn(graph)
+            if not self.use_graph_agg:
+                graph_feat = self.pad_node(graph, graph_feat)
+            feat = graph_feat
+        if self.encoder_name.startswith("image_mol"):
+            device = inputs.device
+            feat = self.image_mol(inputs)
+            feat = feat.unsqueeze(1)
 
-        inputs_llama = self.llama_proj(graph_embeds)
+        embeds = self.ln_vision(feat).to(device)
+
+        inputs_llama = self.llama_proj(embeds)
         atts_llama = torch.ones(inputs_llama.size()[:-1], dtype=torch.long).to(device)
         return inputs_llama, atts_llama
 
@@ -173,10 +212,14 @@ class MiniGPT4(BaseModel):
             return img_embeds, atts_img
 
     def forward(self, samples):
-        graph = samples["graph"]
-        device = graph.x.device
+        if self.encoder_name == "gnn":
+            inputs = samples["graph"]
+            device = inputs.x.device
+        elif self.encoder_name.startswith("image_mol"):
+            inputs = samples["image"]
+            device = inputs.device
+        img_embeds, atts_img = self.encode_img(inputs)
 
-        img_embeds, atts_img = self.encode_img(graph)
         if 'question' in samples:
             assert len(samples['question']) == 1, "not supporting batch mode yet"
             vqa_prompt = '###Human: <compound><compoundHere></compound> ' + samples['question'][0] + "###Assistant: "
@@ -275,7 +318,7 @@ class MiniGPT4(BaseModel):
     @classmethod
     def from_config(cls, cfg):
         vit_model = cfg.get("vit_model", "eva_clip_g")
-        q_former_model = "ckpt/gcn_contextpred.pth"
+        encoder_ckpt = cfg.get("encoder_ckpt", "ckpt/gcn_contextpred.pth")
         img_size = cfg.get("image_size")
         num_query_token = cfg.get("num_query_token")
         llama_model = cfg.get("llama_model")
@@ -293,10 +336,11 @@ class MiniGPT4(BaseModel):
         max_txt_len = cfg.get("max_txt_len", 32)
         end_sym = cfg.get("end_sym", '\n')
         use_graph_agg = cfg.get("use_graph_agg", True)
+        encoder_name = cfg.get("encoder_name", "gnn")
 
         model = cls(
             vit_model=vit_model,
-            q_former_model=q_former_model,
+            encoder_ckpt=encoder_ckpt,
             img_size=img_size,
             drop_path_rate=drop_path_rate,
             use_grad_checkpoint=use_grad_checkpoint,
@@ -312,6 +356,7 @@ class MiniGPT4(BaseModel):
             low_resource=low_resource,
             device_8bit=device_8bit,
             use_graph_agg=use_graph_agg,
+            encoder_name=encoder_name,
         )
 
         ckpt_path = cfg.get("ckpt", "")  # load weights of MiniGPT-4

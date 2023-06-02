@@ -12,6 +12,7 @@ from pipeline.datasets.builders.image_text_pair_builder import (
     CCSBUAlignBuilder
 )
 from pipeline.datasets.builders.gnn_pretrain_builder import GNN_PretrainBuilder
+from pipeline.datasets.builders.image_mol_builder import ImageMolBuilder
 from pipeline.common.registry import registry
 
 __all__ = [
@@ -19,6 +20,7 @@ __all__ = [
     "LaionBuilder",
     "CCSBUAlignBuilder",
     "GNN_PretrainBuilder",
+    "ImageMolBuilder",
 ]
 
 
