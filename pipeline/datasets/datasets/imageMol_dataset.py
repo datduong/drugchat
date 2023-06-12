@@ -8,19 +8,26 @@ from torchvision import transforms
 
 
 class ImageMolDataset(Dataset):
-    def __init__(self, datapath) -> None:
+    def __init__(self, datapath, image_size=224) -> None:
         super().__init__()
         jsonpath = os.path.join(datapath, "smiles_img_qa.json")
         with open(jsonpath, "rt") as f:
             meta = json.load(f)
-        totensor = transforms.ToTensor()
+        normalize = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225])
+        self.transforms = transforms.Compose([
+            transforms.CenterCrop(image_size), 
+            transforms.ToTensor(),
+            normalize,
+        ])
         self.images = {}
         self.data = []
         for idx, rec in meta.items():
             img_file = 'img_{}.png'.format(idx)
             image_path = os.path.join(datapath, img_file)
             image = Image.open(image_path).convert("RGB")
-            img = totensor(image)
+            img = self.transforms(image)
             self.images[idx] = img
             smi, qa = rec
             qa = [(idx, qa_pair) for qa_pair in qa]
