@@ -2,4 +2,4 @@ datasets:
   image_mol:
     data_type: image
     build_info:
-      storage: data/ChEMBL_QA_image
+      storage: data/ChEMBL_PubChem_QA_image

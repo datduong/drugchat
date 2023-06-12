@@ -1,5 +1,5 @@
 datasets:
   cc_sbu_align:
-    data_type: images
+    data_type: pyg_graph
     build_info:
-      storage: dataset/chembl_pyg_abs3.pkl
+      storage: dataset/chembl_pubchem_train.pkl  # list of ['graph', 'question', 'answer'] dict

@@ -97,8 +97,24 @@ def convert_chembl():
     with open("./dataset/PubChem_QA_train.pkl", "wb") as f:
         pickle.dump(out, f)
 
+def convert_simple_graph_smi(infile, outfile):
+    """
+    Convert to a data format that support both graph and images (which is converted to feature dataset later)
+    """
+    with open(infile, "rt") as f:
+        js = json.load(f)
+    out = {}
+    for smi, rec in js.items():
+        graph = smiles2graph(smi)
+        out[smi] = {"graph": graph, "QA": rec}
+
+    with open(outfile, "wb") as f:
+        pickle.dump(out, f)
+
 
 if __name__ == '__main__':
     # graph = smiles2graph('O1C=C[C@H]([C@H]1O2)c3c2cc(OC)c4c3OC(=O)C5=C4CCC(=O)5')
     # print(graph)
-    convert_chembl()
+    # convert_chembl()
+    # convert_simple_graph_smi("data/ChEMBL_PubChem_QA_train.json", "dataset/ChEMBL_PubChem_QA_train_graph_smi.pkl")
+    convert_simple_graph_smi("data/ChEMBL_QA_train.json", "dataset/ChEMBL_QA_train_graph_smi.pkl")

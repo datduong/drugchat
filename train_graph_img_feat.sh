@@ -1,0 +1,1 @@
+torchrun --nproc_per_node 1 --master_port 34693 train.py --cfg-path train_configs/drugchat_graph_img_feat.yaml

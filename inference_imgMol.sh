@@ -1,0 +1,2 @@
+# python inference.py --cfg-path eval_configs/image_mol_infer.yaml --gpu-id 0 --out_file data/ChEMBL_QA_test_imgMol_fixed.json
+python inference.py --cfg-path eval_configs/image_mol_infer.yaml --gpu-id 0 --in_file data/ChEMBL_QA_train.json --out_file eval_results/ChEMBL_QA_train_imgMol_trained_ChEMBL.json

@@ -6,6 +6,7 @@ from PIL import Image
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, LlamaTokenizer
 from transformers import StoppingCriteria, StoppingCriteriaList
+from torchvision import transforms
 
 import dataclasses
 from enum import auto, Enum
@@ -120,13 +121,22 @@ CONV_VISION = Conversation(
 
 
 class Chat:
-    def __init__(self, model, vis_processor, device='cuda:0'):
+    def __init__(self, model, vis_processor=None, device='cuda:0'):
         self.device = device
         self.model = model
         self.vis_processor = vis_processor
         stop_words_ids = [torch.tensor([835]).to(self.device),
                           torch.tensor([2277, 29937]).to(self.device)]  # '###' can be encoded in two different ways.
         self.stopping_criteria = StoppingCriteriaList([StoppingCriteriaSub(stops=stop_words_ids)])
+
+        normalize = transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225])
+        self.transforms = transforms.Compose([
+            transforms.CenterCrop(224), 
+            transforms.ToTensor(),
+            normalize,
+        ])
 
     def ask(self, text, conv):
         if len(conv.messages) > 0 and conv.messages[-1][0] == conv.roles[0] \
@@ -171,12 +181,13 @@ class Chat:
         conv.messages[-1][1] = output_text
         return output_text, output_token.cpu().numpy()
 
-    def upload_img(self, image, conv, img_list):
+    def upload_img(self, image, conv, img_list, autocast=False, autocast_proj=False):
         assert isinstance(image, str), f"Expected a string but got {image}"
 
         timestamp = time.time()
         with open("dataset/tmp_smiles.txt", "wt") as f:
             f.write(str(timestamp) + " " + image)
+        inputs = {}
         for _ in range(60):
             time.sleep(1)
             pkl_file = "dataset/tmp_smiles.pkl"
@@ -185,12 +196,17 @@ class Chat:
                     res = pickle.load(f)
                 t2 = res["timestamp"]
                 if t2 > timestamp:
-                    g = res["graph"]
-                    graph0 = Data(x=torch.asarray(g['node_feat']), edge_index=torch.asarray(g['edge_index']), edge_attr=torch.asarray(g['edge_feat']))
-                    graph = Batch.from_data_list([graph0]).to(self.device)
+                    if "graph" in res:
+                        g = res["graph"]
+                        graph0 = Data(x=torch.asarray(g['node_feat']), edge_index=torch.asarray(g['edge_index']), edge_attr=torch.asarray(g['edge_feat']))
+                        inputs["graph"] = Batch.from_data_list([graph0]).to(self.device)
+                    if "img_save_path" in res:
+                        img_save_path = res["img_save_path"]
+                        img = Image.open(img_save_path).convert("RGB")
+                        inputs["image"] = self.transforms(img).unsqueeze(0).to(self.device)
                     break
 
-        image_emb, _ = self.model.encode_img(graph)
+        image_emb, _ = self.model.encode_img_infer(inputs, device=self.device, autocast=autocast, autocast_proj=autocast_proj)
         img_list.append(image_emb)
         conv.append_message(conv.roles[0], "<compound><compoundHere></compound>")
         msg = "Received."

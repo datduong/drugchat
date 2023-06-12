@@ -28,6 +28,8 @@ def parse_args():
     parser.add_argument("--gpu-id", type=int, default=0, help="specify the gpu to load the model.")
     parser.add_argument("--num_beams", type=int, default=1, help="specify the num_beams for text generation.")
     parser.add_argument("--temperature", type=float, default=1, help="specify the temperature for text generation.")
+    parser.add_argument("--out_file", type=str, default="data/ChEMBL_QA_test_imgMol2.json", help="specify the output file.")
+    parser.add_argument("--in_file", type=str, default="data/ChEMBL_QA_test.json", help="specify the output file.")
     parser.add_argument(
         "--options",
         nargs="+",
@@ -58,6 +60,8 @@ print('Initializing Chat')
 args = parse_args()
 cfg = Config(args)
 use_amp = cfg.run_cfg.get("amp", False)
+amp_encoder = cfg.run_cfg.get("amp_encoder", use_amp)
+amp_proj = cfg.run_cfg.get("amp_proj", use_amp)
 
 model_config = cfg.model_cfg
 model_config.device_8bit = args.gpu_id
@@ -67,9 +71,7 @@ model = model_cls.from_config(model_config)
 
 model = model.to('cuda:{}'.format(args.gpu_id))
 
-vis_processor_cfg = cfg.datasets_cfg.cc_sbu_align.vis_processor.train
-vis_processor = registry.get_processor_class(vis_processor_cfg.name).from_config(vis_processor_cfg)
-chat = Chat(model, vis_processor, device='cuda:{}'.format(args.gpu_id))
+chat = Chat(model, device='cuda:{}'.format(args.gpu_id))
 print('Initialization Finished')
 
 # ========================================
@@ -88,8 +90,7 @@ def upload_img(gr_img):
     assert gr_img is not None
     chat_state = CONV_VISION.copy()
     img_list = []
-    with torch.cuda.amp.autocast(use_amp):
-        llm_message = chat.upload_img(gr_img, chat_state, img_list)
+    llm_message = chat.upload_img(gr_img, chat_state, img_list, autocast=amp_encoder, autocast_proj=amp_proj)
     return chat_state, img_list
 
 def gradio_ask(user_message, chatbot, chat_state):
@@ -128,7 +129,7 @@ def infer(smiles, questions):
 
 
 def infer_chembl_QA():
-    with open("./data/ChEMBL_QA_test.json", "rt") as f:
+    with open(args.in_file, "rt") as f:
         js = json.load(f)
     out = {}
     for smi, rec in tqdm.tqdm(js.items()):
@@ -147,7 +148,7 @@ def infer_chembl_QA():
         for qa in qa_pairs:
             print(qa)
 
-        with open("./data/ChEMBL_QA_test_inference.json", "wt") as f:
+        with open(args.out_file, "wt") as f:
             json.dump(out, f)
 
 

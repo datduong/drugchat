@@ -8,12 +8,13 @@ model:
   low_resource: false  # for reproducibility
   prompt_path: "prompts/alignment.txt"
   prompt_template: '###Human: {} ###Assistant: '
-  ckpt: pipeline/output/pipeline_train_feat/20230607183/checkpoint_9_fixed_name.pth
+  ckpt: pipeline/output/pipeline_train_feat/20230608065/checkpoint_9.pth
   encoder_ckpt: "ckpt/gcn_contextpred.pth"
   use_graph_agg: True  # whether to use graph aggregated embedding or node embedding
-  encoder_name: gnn
+  encoder_names: ["gnn", "image_mol"]
   feat_dims: # if trained with encoder_name == feat, need to test with this attribute
     graph_feat: 300  # using a proj layer named llama_proj.graph_feat
+    image_feat: 512
 
 datasets:
   cc_sbu_align:

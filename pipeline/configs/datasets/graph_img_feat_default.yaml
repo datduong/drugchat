@@ -1,0 +1,5 @@
+datasets:
+  graph_img_feat_dataset:
+    data_type: "feature"
+    build_info:
+      storage: dataset/chembl_train_graph_img_feat.pkl

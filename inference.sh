@@ -1,1 +1,2 @@
-python inference.py --cfg-path eval_configs/drugchat_infer.yaml --gpu-id 0
+# python inference.py --cfg-path eval_configs/drugchat_infer.yaml --gpu-id 0 --in_file data/ChEMBL_QA_test.json --out_file eval_results/ChEMBL_QA_test_graph_trained_ChEMBL.json
+python inference.py --cfg-path eval_configs/drugchat_graph_image_infer.yaml --gpu-id 0 --in_file data/ChEMBL_QA_test.json --out_file eval_results/ChEMBL_QA_test_graph_img_trained_ChEMBL.json

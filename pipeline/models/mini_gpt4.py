@@ -61,18 +61,21 @@ class MiniGPT4(BaseModel):
         low_resource=False,  # use 8 bit and put vit in cpu
         device_8bit=0,  # the device of 8bit model should be set when loading and cannot be changed anymore.
         use_graph_agg=True,
-        encoder_name="gnn",
+        encoder_names=["gnn"],
+        feat_dims=None,
+        prompt_tuning=0,
     ):
         super().__init__()
 
         # self.tokenizer = self.init_tokenizer()
         self.low_resource = low_resource
-        self.encoder_name = encoder_name
+        self.encoder_names = encoder_names
 
-        if self.encoder_name == "gnn":
+        self.feat_dims = feat_dims
+        if "gnn" in self.encoder_names:
             self.use_graph_agg = use_graph_agg
             self.create_gnn(encoder_ckpt, freeze_qformer)
-        elif self.encoder_name.startswith("image_mol"):
+        if "image_mol" in self.encoder_names:
             self.create_image_mol(encoder_ckpt, freeze_qformer)
 
         self.ln_vision = nn.Identity()
@@ -98,9 +101,23 @@ class MiniGPT4(BaseModel):
             param.requires_grad = False
         print('Loading LLAMA Done')
 
-        self.llama_proj = nn.Linear(
-            self.encoder_out_dim, self.llama_model.config.hidden_size
-        )
+        if self.feat_dims is not None:
+            self.llama_proj = nn.ModuleDict()
+            for kk, dim in self.feat_dims.items():
+                self.llama_proj.add_module(
+                    kk,
+                    nn.Linear(dim, self.llama_model.config.hidden_size)
+                    )
+        else:
+            self.llama_proj = nn.Linear(
+                self.encoder_out_dim, self.llama_model.config.hidden_size
+            )
+
+        if prompt_tuning:
+            self.register_parameter("soft_prompt", nn.Parameter(torch.randn(1, prompt_tuning, self.llama_model.config.hidden_size)))
+            nn.init.uniform_(self.soft_prompt, -0.5, 0.5)
+        else:
+            self.soft_prompt = None
         self.max_txt_len = max_txt_len
         self.end_sym = end_sym
 
@@ -137,7 +154,7 @@ class MiniGPT4(BaseModel):
         print('Loaded GNN')
 
     def create_image_mol(self, model_path, freeze):
-        model_name = self.encoder_name.replace("image_mol_", "")
+        model_path = "ckpt/ImageMol.pth.tar"
         model = ImageMol()
         model.load_from_pretrained(url_or_filename=model_path)
         self.image_mol = model
@@ -154,31 +171,73 @@ class MiniGPT4(BaseModel):
     def vit_to_cpu(self):
         self.ln_vision.to("cpu")
         self.ln_vision.float()
-        if self.encoder_name == "gnn":
+        if "gnn" in self.encoder_names:
             self.gnn.to("cpu")
             self.gnn.float()
-        elif self.encoder_name.startswith("image_mol"):
+        if "image_mol" in self.encoder_names:
             self.image_mol.to("cpu")
             self.image_mol.float()
 
-    def encode_img(self, inputs):
-        if self.encoder_name == "gnn":
-            graph = inputs
+    def encode_img(self, inputs, device, do_proj=True):
+        """
+        Args:
+            inputs (dict)
+        """
+        if "gnn" in self.encoder_names:
+            graph = inputs['graph']
             device = graph.x.device
             if self.low_resource:
                 self.vit_to_cpu()
                 graph = graph.to("cpu")
 
-            graph_feat = self.gnn(graph)
+            graph_feat = self.gnn(graph).to(device)
             if not self.use_graph_agg:
                 graph_feat = self.pad_node(graph, graph_feat)
             feat = graph_feat
-        if self.encoder_name.startswith("image_mol"):
-            device = inputs.device
-            feat = self.image_mol(inputs)
+            inputs["feat"] = feat
+            inputs["graph_feat"] = feat
+        if "image_mol" in self.encoder_names:
+            image = inputs['image']
+            device = image.device
+            if self.low_resource:
+                self.vit_to_cpu()
+                image = image.to("cpu")
+            feat = self.image_mol(image).to(device)
             feat = feat.unsqueeze(1)
+            inputs["feat"] = feat
+            inputs["image_feat"] = feat
+        
+        if do_proj:
+            inputs_llama, atts_llama = self.proj_feat(inputs, device)
+            return inputs_llama, atts_llama
+        return inputs
 
-        embeds = self.ln_vision(feat).to(device)
+    def encode_img_infer(self, inputs, device, autocast=False, autocast_proj=False):
+        """
+        Need this function to fix the inference data casting issues
+        """
+        with torch.cuda.amp.autocast(autocast):
+            features = self.encode_img(inputs, device, do_proj=False)
+        with torch.cuda.amp.autocast(autocast_proj):
+            out = self.proj_feat(features, device)
+        return out
+
+    def proj_feat(self, features, device):
+        """
+        Args:
+            features (dict)
+        """
+        if self.feat_dims is not None:
+            feats = []
+            for kk, dim in self.feat_dims.items():
+                feat = features[kk]
+                inputs_tokens = self.llama_proj[kk](feat)
+                feats.append(inputs_tokens)
+            img_embeds = torch.cat(feats, dim=1)
+            atts_img = torch.ones(img_embeds.size()[:-1], dtype=torch.long).to(device)
+            return img_embeds, atts_img
+
+        embeds = self.ln_vision(features["feat"]).to(device)
 
         inputs_llama = self.llama_proj(embeds)
         atts_llama = torch.ones(inputs_llama.size()[:-1], dtype=torch.long).to(device)
@@ -195,16 +254,19 @@ class MiniGPT4(BaseModel):
         node_repr = torch.stack([torch.cat([node, pad.expand(pz, -1)]) for pz, node in zip(pad_size, nodes)])
         return node_repr
 
-    def prompt_wrap(self, img_embeds, atts_img, prompt):
-        if prompt:
+    def prompt_wrap(self, img_embeds, atts_img, prompts):
+        if prompts:
             batch_size = img_embeds.shape[0]
-            p_before, p_after = prompt.split('<compoundHere>')
+            ps = [prompt.split('<compoundHere>') for prompt in prompts]
+            p_before, p_after = list(zip(*ps))
             p_before_tokens = self.llama_tokenizer(
-                p_before, return_tensors="pt", add_special_tokens=False).to(img_embeds.device)
+                p_before, padding="longest", return_tensors="pt", add_special_tokens=False).to(img_embeds.device)
             p_after_tokens = self.llama_tokenizer(
-                p_after, return_tensors="pt", add_special_tokens=False).to(img_embeds.device)
-            p_before_embeds = self.llama_model.model.embed_tokens(p_before_tokens.input_ids).expand(batch_size, -1, -1)
-            p_after_embeds = self.llama_model.model.embed_tokens(p_after_tokens.input_ids).expand(batch_size, -1, -1)
+                p_after, padding="longest", return_tensors="pt", add_special_tokens=False).to(img_embeds.device)
+            p_before_embeds = self.llama_model.model.embed_tokens(p_before_tokens.input_ids)#.expand(batch_size, -1, -1)
+            p_after_embeds = self.llama_model.model.embed_tokens(p_after_tokens.input_ids)#.expand(batch_size, -1, -1)
+            if self.soft_prompt is not None:
+                img_embeds = torch.cat([img_embeds, self.soft_prompt.expand(batch_size, -1, -1)], 1)
             wrapped_img_embeds = torch.cat([p_before_embeds, img_embeds, p_after_embeds], dim=1)
             wrapped_atts_img = atts_img[:, :1].expand(-1, wrapped_img_embeds.shape[1])
             return wrapped_img_embeds, wrapped_atts_img
@@ -212,21 +274,26 @@ class MiniGPT4(BaseModel):
             return img_embeds, atts_img
 
     def forward(self, samples):
-        if self.encoder_name == "gnn":
+        if "gnn" in self.encoder_names:
             inputs = samples["graph"]
             device = inputs.x.device
-        elif self.encoder_name.startswith("image_mol"):
+        if "image_mol" in self.encoder_names:
             inputs = samples["image"]
             device = inputs.device
-        img_embeds, atts_img = self.encode_img(inputs)
+        if "feat" in self.encoder_names:
+            # no encoder
+            device = list(v for v in samples.values() if isinstance(v, torch.Tensor))[0].device
 
+        img_embeds, atts_img = self.encode_img(samples, device)
+
+        assert 'question' in samples
         if 'question' in samples:
-            assert len(samples['question']) == 1, "not supporting batch mode yet"
-            vqa_prompt = '###Human: <compound><compoundHere></compound> ' + samples['question'][0] + "###Assistant: "
+            # assert len(samples['question']) == 1, "not supporting batch mode yet"
+            vqa_prompt = ['###Human: <compound><compoundHere></compound> ' + qq + "###Assistant: " for qq in samples['question']]
             img_embeds, atts_img = self.prompt_wrap(img_embeds, atts_img, vqa_prompt)
         elif self.prompt_list:
             prompt = random.choice(self.prompt_list)
-            img_embeds, atts_img = self.prompt_wrap(img_embeds, atts_img, prompt)
+            img_embeds, atts_img = self.prompt_wrap(img_embeds, atts_img, [prompt])
 
         self.llama_tokenizer.padding_side = "right"
 
@@ -337,6 +404,9 @@ class MiniGPT4(BaseModel):
         end_sym = cfg.get("end_sym", '\n')
         use_graph_agg = cfg.get("use_graph_agg", True)
         encoder_name = cfg.get("encoder_name", "gnn")
+        encoder_names = cfg.get("encoder_names", [encoder_name])
+        feat_dims = cfg.get("feat_dims", None)  # a dict that controls the name of llama_proj
+        prompt_tuning = cfg.get("prompt_tuning", 0)
 
         model = cls(
             vit_model=vit_model,
@@ -356,13 +426,15 @@ class MiniGPT4(BaseModel):
             low_resource=low_resource,
             device_8bit=device_8bit,
             use_graph_agg=use_graph_agg,
-            encoder_name=encoder_name,
+            encoder_names=encoder_names,
+            feat_dims=feat_dims,
+            prompt_tuning=prompt_tuning,
         )
 
         ckpt_path = cfg.get("ckpt", "")  # load weights of MiniGPT-4
         if ckpt_path:
             ckpt = torch.load(ckpt_path, map_location="cpu")
             msg = model.load_state_dict(ckpt['model'], strict=False)
-            print("Loaded checkpoint (the linear projection): {}".format(ckpt_path))
+            print("Loaded checkpoint from {}: {}".format(ckpt_path, msg))
 
         return model
