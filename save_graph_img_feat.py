@@ -73,17 +73,17 @@ def convert_graph(infile, outfile):
 
 
 def convert_graph_and_img():
-    device = "cuda:1"
+    device = "cuda:0"
     net = Net().to(device)
     net_img = NetImg().to(device)
 
-    with open("dataset/ChEMBL_QA_train_graph_smi.pkl", "rb") as f:
+    with open("dataset/ChEMBL_QA_test_graph_smi.pkl", "rb") as f:
         data = pickle.load(f)
 
-    with open("data/ChEMBL_QA_image/smiles_img_qa.json", "rt") as f:
+    with open("data/ChEMBL_QA_test_image/smiles_img_qa.json", "rt") as f:
         img_data = json.load(f)
 
-    img_base = "data/ChEMBL_QA_image/img_{}.png"
+    img_base = "data/ChEMBL_QA_test_image/img_{}.png"
     def get_img(smi):
         for idx, (smi_, _) in img_data.items():
             if smi == smi_:
@@ -110,11 +110,12 @@ def convert_graph_and_img():
                 img_feat = None
             dd["img_feat"] = img_feat
 
-    with open("dataset/chembl_train_graph_img_feat.pkl", "wb") as f:
+    with open("dataset/chembl_test_graph_img_feat.pkl", "wb") as f:
         pickle.dump(data, f)
 
 
 if __name__ == "__main__":
     # convert_graph("dataset/ChEMBL_PubChem_QA_train_graph_smi.pkl", "dataset/chembl_pubchem_train_graph_feat.pkl")
     # convert_graph("dataset/ChEMBL_QA_train_graph_smi.pkl", "dataset/chembl_train_graph_feat.pkl")
+    # convert_graph("dataset/ChEMBL_QA_test_graph_smi.pkl", "dataset/chembl_test_graph_feat.pkl")
     convert_graph_and_img()

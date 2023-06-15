@@ -117,4 +117,5 @@ if __name__ == '__main__':
     # print(graph)
     # convert_chembl()
     # convert_simple_graph_smi("data/ChEMBL_PubChem_QA_train.json", "dataset/ChEMBL_PubChem_QA_train_graph_smi.pkl")
-    convert_simple_graph_smi("data/ChEMBL_QA_train.json", "dataset/ChEMBL_QA_train_graph_smi.pkl")
+    # convert_simple_graph_smi("data/ChEMBL_QA_train.json", "dataset/ChEMBL_QA_train_graph_smi.pkl")
+    convert_simple_graph_smi("data/ChEMBL_QA_test.json", "dataset/ChEMBL_QA_test_graph_smi.pkl")

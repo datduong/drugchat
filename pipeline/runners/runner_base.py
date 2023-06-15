@@ -393,7 +393,7 @@ class RunnerBase:
                             ), "No agg_metrics found in validation log."
 
                             agg_metrics = val_log["agg_metrics"]
-                            if agg_metrics > best_agg_metric and split_name == "val":
+                            if agg_metrics > best_agg_metric and split_name.startswith("val"):
                                 best_epoch, best_agg_metric = cur_epoch, agg_metrics
 
                                 self._save_checkpoint(cur_epoch, is_best=True)
@@ -554,6 +554,9 @@ class RunnerBase:
         for dataset, bsz, is_train, collate_fn in zip(
             datasets, batch_sizes, is_trains, collate_fns
         ):
+            if (isinstance(dataset, list) or isinstance(dataset, tuple)) and len(dataset) == 1:
+                dataset = dataset[0]
+                collate_fn = collate_fn[0]
             if isinstance(dataset, list) or isinstance(dataset, tuple):
                 if hasattr(dataset[0], 'sample_ratio') and dataset_ratios is None:
                     dataset_ratios = [d.sample_ratio for d in dataset]

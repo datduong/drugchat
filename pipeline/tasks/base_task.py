@@ -92,7 +92,7 @@ class BaseTask:
             samples = prepare_sample(samples, cuda_enabled=cuda_enabled)
 
             eval_output = self.valid_step(model=model, samples=samples)
-            results.extend(eval_output)
+            results.append(eval_output)
 
         if is_dist_avail_and_initialized():
             dist.barrier()

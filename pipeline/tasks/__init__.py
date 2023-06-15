@@ -9,6 +9,7 @@ from pipeline.common.registry import registry
 from pipeline.tasks.base_task import BaseTask
 from pipeline.tasks.image_text_pretrain import ImageTextPretrainTask
 from pipeline.tasks.gnn_pretrain import GraphWordVecPretrainTask
+from pipeline.tasks.linear_probe import LinearProbeTask
 
 
 def setup_task(cfg):
@@ -25,4 +26,5 @@ __all__ = [
     "BaseTask",
     "ImageTextPretrainTask",
     "GraphWordVecPretrainTask",
+    "LinearProbeTask",
 ]

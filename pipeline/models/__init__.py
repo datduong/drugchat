@@ -15,6 +15,7 @@ from pipeline.models.blip2 import Blip2Base
 from pipeline.models.mini_gpt4 import MiniGPT4
 from pipeline.processors.base_processor import BaseProcessor
 from pipeline.models.gnn_pretrain import GNN_ENCODER
+from pipeline.models.linear_probe import LinearProbe
 
 
 __all__ = [
@@ -23,6 +24,7 @@ __all__ = [
     "Blip2Base",
     "MiniGPT4",
     "GNN_ENCODER",
+    "LinearProbe",
 ]
 
 

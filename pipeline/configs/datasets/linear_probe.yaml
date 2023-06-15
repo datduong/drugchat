@@ -1,0 +1,9 @@
+datasets:
+  linear_probe_dataset:
+    data_type: "feature"
+    build_info:
+      storage: 
+        # train: dataset/chembl_train_graph_feat.pkl
+        # valid: dataset/chembl_test_graph_feat.pkl
+        train: dataset/chembl_train_graph_img_feat.pkl
+        valid: dataset/chembl_test_graph_img_feat.pkl
