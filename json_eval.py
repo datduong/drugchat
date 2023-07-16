@@ -90,14 +90,54 @@ print('Number of questions:{}'.format(str(len(q_cnt))))
 print('Number of answers for each question:')
 print(q_cnt)
 
+import logging
+import random
+q_idx = {'Is this molecule characterized by a small molecular structure or a protein sequence?': [
+    "It has a small molecule structure.".lower().strip(" \n."),
+    "It has both.".lower().strip(" \n.")
+]}
+
+def get_bi_label(q, ans):
+    if q in q_idx:
+        ans_list = q_idx[q]
+        ans = ans.lower().strip(" \n.")
+        # if ans not in ans_list:
+        #     ans_list.append(ans)
+        for i, ref in enumerate(ans_list):
+            if ref in ans or ans in ref:
+                return i
+        logging.warning(f"Didn't find {ans=} for {ans_list=}")
+        return random.choice([0, 1])
+        # return ans_list.index(ans)
+    ans = ans.lower().strip(" .")
+    if ans == "yes":
+        return 1
+    if ans == "no":
+        return 0
+    logging.warning(f"Got ans='{ans}' for binary question='{q}'")
+    return random.choice([0, 1])
+
+from sklearn.metrics import classification_report
+
+def get_bi_cls_report(pred, labels):
+    report = classification_report(labels, pred, output_dict=True)
+    # report is a dict {'0': {}, '1': {}, 'macro avg': {}, 'weighted avg': {}}
+    # return report['macro avg']
+    return report
+
 q_res_bi={}
 
 for q in q_bi:
     num_t,num_f=0,0
+    pred = []
+    labels = []
     for yt,yp in q_lst[q]:
         if yt in yp:num_t+=1
         else:num_f+=1
-    q_res_bi[q]=(num_t/(num_t+num_f),num_t,num_f)
+        pred.append(get_bi_label(q, yp))
+        labels.append(get_bi_label(q, yt))
+    rep = get_bi_cls_report(pred, labels)
+    q_res_bi[q]= [(num_t/(num_t+num_f),num_t,num_f), rep]
 
 q_res_clf={}
 
@@ -128,11 +168,14 @@ for q in q_num:
     if cnt==0:print(q_lst[q])
     q_res_num[q]=(sum_sq/cnt,cnt)
 
+idx = 0
 with open('results.txt','w') as f:
     f.write('Binary Questions\n')
     for k,v in q_res_bi.items():
+        f.write(f'{idx}\n')
         f.write(k+'\n')
         f.write(str(v)+'\n')
+        idx += 1
     f.write('\n')
 
     f.write('Multi-class\n')
