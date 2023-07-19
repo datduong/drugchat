@@ -1,0 +1,5 @@
+datasets:
+  image_mol:
+    data_type: image
+    build_info:
+      storage: data/chengchan_drug_dataset/Smiles2Image

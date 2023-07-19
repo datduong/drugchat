@@ -11,7 +11,10 @@ from pipeline.datasets.datasets.imageMol_dataset import ImageMolDataset
 class ImageMolBuilder(BaseDatasetBuilder):
     train_dataset_cls = ImageMolDataset
 
-    DATASET_CONFIG_DICT = {"default": "configs/datasets/image_mol/default.yaml"}
+    DATASET_CONFIG_DICT = {
+        "default": "configs/datasets/image_mol/default.yaml",
+        "wiki": "configs/datasets/image_mol/wiki.yaml",
+    }
 
     def _download_ann(self):
         pass

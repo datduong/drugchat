@@ -1,0 +1,56 @@
+model:
+  arch: mini_gpt4
+  model_type: pretrain_vicuna
+  freeze_vit: True
+  freeze_qformer: True
+  max_txt_len: 160
+  low_resource: False
+  end_sym: "###"
+  prompt_path: "prompts/alignment.txt"
+  prompt_template: '###Human: {} ###Assistant: '
+  ckpt: "pipeline/output/pipeline_image_mol/20230612080/checkpoint_9.pth"
+  encoder_ckpt: ckpt/ImageMol.pth.tar
+  encoder_name: image_mol
+  prompt_tuning: 32
+
+datasets:
+  image_mol:
+    label: "using wiki QA image data"
+    type: wiki
+    vis_processor:
+      train:
+        name: "blip2_image_train"
+        image_size: 224
+    text_processor:
+      train:
+        name: "blip_caption"
+
+run:
+  task: image_text_pretrain
+  # optimizer
+  lr_sched: "linear_warmup_cosine_lr"
+  init_lr: 2e-4
+  min_lr: 1e-6
+  warmup_lr: 1e-6
+
+  weight_decay: 0.03
+  max_epoch: 10
+  iters_per_epoch: 4123
+  batch_size_train: 4
+  batch_size_eval: 4
+  num_workers: 1
+  warmup_steps: 4123
+
+  seed: 42
+  output_dir: "output/pipeline_image_mol"
+
+  amp: True
+  resume_ckpt_path: null
+
+  evaluate: False 
+  train_splits: ["train"]
+
+  device: "cuda"
+  world_size: 1
+  dist_url: "env://"
+  distributed: True

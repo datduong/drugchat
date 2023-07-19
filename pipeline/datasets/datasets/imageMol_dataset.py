@@ -11,6 +11,7 @@ class ImageMolDataset(Dataset):
     def __init__(self, datapath, image_size=224) -> None:
         super().__init__()
         jsonpath = os.path.join(datapath, "smiles_img_qa.json")
+        print(f"Using {jsonpath=}")
         with open(jsonpath, "rt") as f:
             meta = json.load(f)
         normalize = transforms.Normalize(
