@@ -22,12 +22,8 @@ def atom_chiral(atom):
     return CHI[c]
 
 def atom_to_feature(atom):
-    num = atom.GetAtomicNum() - 1
-    if num == -1:
-        # atom.GetAtomicNum() is 0, which is the generic wildcard atom *, may be used to symbolize an unknown atom of any element.
-        # See https://biocyc.org/help.html?object=smiles
-        num = 118  # normal num is [0, 117], so we use 118 to denote wildcard atom *
-    return [num, atom_chiral(atom)]
+
+    return [atom.GetAtomicNum() - 1, atom_chiral(atom)]
 
 def bond_to_feature(bond):
     return [bond_type(bond), bond_dir(bond)]
